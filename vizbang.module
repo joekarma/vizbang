@@ -84,8 +84,8 @@ function vizbang_block_list_alter(&$blocks) {
       $pages = drupal_strtolower($block->pages);
 
       if ($block->visibility < BLOCK_VISIBILITY_PHP) {
-        // Convert the Drupal path to lowercase.
-        $path = drupal_strtolower(drupal_get_path_alias($_GET['q']));
+        // Convert the path to lowercase.
+        $path = drupal_strtolower($_GET['q']);
 
         // Check for a match. _vizbang_match_path searches all aliases for paths.
         $page_match = _vizbang_match_path($path, $pages);
@@ -113,10 +113,6 @@ function vizbang_block_list_alter(&$blocks) {
   }
 }
 
-/*function _vizbang_path_aliases($path) {
-  drupal_
-}*/
-
 /**
  * Check if a path matches any pattern in a set of patterns.
  *
@@ -131,38 +127,74 @@ function vizbang_block_list_alter(&$blocks) {
  */
 function _vizbang_match_path($path, $patterns) {
 
-  // Convert path settings to a regular expression.
-  // Therefore replace newlines with a logical or, /* with asterisks and the <front> with the frontpage.
-  $to_replace = array(
-    '/\\\\\*/',     // asterisks
-    '/(^|\|)\\\\<front\\\\>(\r|\n|\\s*$)/' // <front>
-  );
-  $replacements = array(
-    '.*',
-    '\1' . preg_quote(variable_get('site_frontpage', 'node'), '/') . '\2'
-  );
-  $patterns_quoted = preg_quote($patterns, '/');
-  $patterns_quoted = preg_replace($to_replace, $replacements, $patterns_quoted);
+  $patterns_arrays = &drupal_static(__FUNCTION__);
 
-  $patterns_array = preg_split('/(\\r\\n?|\\n)+/', $patterns_quoted);
+  if (!isset($patterns_arrays[$patterns])) {
+
+    $aliases = _vizbang_path_aliases($path);
+
+    // Convert path settings to a regular expression.
+    // Therefore replace newlines with a logical or, /* with asterisks and the <front> with the frontpage.
+    $to_replace = array(
+      '/\\\\\*/',     // asterisks
+      '/(^|\||\\-|\\!)\\\\<front\\\\>(\r|\n|\\s*$)/' // <front>
+    );
+    $replacements = array(
+      '.*',
+      '\1' . preg_quote(variable_get('site_frontpage', 'node'), '/') . '\2'
+    );
+    $patterns_quoted = preg_quote($patterns, '/');
+    $patterns_quoted = preg_replace($to_replace, $replacements, $patterns_quoted);
+
+    $patterns_array[$patterns] = preg_split('/(\\r\\n?|\\n)+/', $patterns_quoted);
+  }
+
+  $patterns_array = $patterns_array[$patterns];
 
   for ($i = count($patterns_array) - 1; $i >= 0; $i--) {
-    $current_pattern = $patterns_array[$i];
+    for ($j = count($aliases) - 1; $j >= 0; $j--) {
 
-    if (substr($current_pattern, 0, 2) == '\\!') { // starts with an exclamation mark
-      $current_pattern = subst($current_pattern, 2);
+      $current_pattern = $patterns_array[$i];
 
-      if (preg_match('/' . $current_pattern . '/', $path)) {
-        return FALSE;
-      }
-    } else {
-      if (preg_match('/' . $current_pattern . '/', $path)) {
-        return TRUE;
+      $first_two_chars = substr($current_pattern, 0, 2);
+      if ($first_two_chars == '\\-' || $first_two_chars == '\\!') { // starts with a minus sign or exclamation mark
+        $current_pattern = substr($current_pattern, 2);
+
+        if (preg_match('/' . $current_pattern . '/', $aliases[$j])) {
+          return FALSE;
+        }
+      } else {
+        if (preg_match('/' . $current_pattern . '/', $aliases[$j])) {
+          return TRUE;
+        }
       }
     }
   }
 
   return FALSE;
+}
+
+
+function _vizbang_path_aliases($path) {
+  $path_aliases = &drupal_static(__FUNCTION__);
+
+  if (!isset($path_aliases[$path])) {
+    $original_path = $path;
+
+    // Lookup the path alias first.
+    if ($source = drupal_lookup_path('source', $path)) {
+      $path = $source;
+    }
+
+    $result = db_query('SELECT alias FROM {url_alias} WHERE source = :source', array('source' => $path));
+
+    $aliases = $result->fetchCol();
+    array_push($aliases, $path);
+
+    $path_aliases[$path] = $aliases;
+  }
+
+  return $path_aliases[$path];
 }
 
 

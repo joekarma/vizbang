@@ -1,3 +1,3 @@
 name = Vizbang
-description = Refine block visibility rules by including an exclamation mark in front of path patterns you wish to negate.
+description = Refine block visibility rules by including a minus sign or exclamation mark in front of path patterns you wish to negate.
 core = 7.x
